@@ -1,0 +1,258 @@
+-- [[ AI No1 - Blockspin Master (Smooth Sine Jitter) for Delta iOS ]] --
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+
+local AI_No1_Screen = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local ToggleAimbot = Instance.new("TextButton")
+local ToggleESP = Instance.new("TextButton")
+local ChangeFOV = Instance.new("TextButton")
+local ChangeSmooth = Instance.new("TextButton")
+local MenuToggleBtn = Instance.new("TextButton")
+
+AI_No1_Screen.Name = "AINo1_Screen"
+AI_No1_Screen.Parent = game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
+AI_No1_Screen.ResetOnSpawn = false
+
+local AimbotEnabled = false
+local ESPEnabled = false
+local FOVSize = 8 
+local Smoothness = 0.50 
+
+-- ปรับแต่งการขยับตรงนี้
+local JitterSpeed = 9      -- ความเร็วในการขยับขึ้นลง (ค่ายิ่งมากยิ่งขยับไวขึ้น)
+local JitterAmount = 1.1    -- ระยะการขยับขึ้นลง (หน่วยเป็น Studs ยิ่งมากยิ่งสไลด์ยาว)
+local RunningTime = 0
+
+-- พิกัดศูนย์กลางวงกลม FOV แนวตั้ง 0.41 ตามที่ขอไว้
+local TargetScreenX = 0.50
+local TargetScreenY = 0.41
+
+local FOVGuiCircle = Instance.new("Frame")
+local FOVCorner = Instance.new("UICorner")
+local FOVStroke = Instance.new("UIStroke")
+
+FOVGuiCircle.Name = "FOVGuiCircle"
+FOVGuiCircle.Parent = AI_No1_Screen
+FOVGuiCircle.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+FOVGuiCircle.BackgroundTransparency = 1 
+FOVGuiCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVGuiCircle.Visible = false 
+
+FOVCorner.CornerRadius = UDim.new(1, 0)
+FOVCorner.Parent = FOVGuiCircle
+
+FOVStroke.Color = Color3.fromRGB(0, 255, 100) 
+FOVStroke.Thickness = 1.2 
+FOVStroke.Transparency = 0.4 
+FOVStroke.Parent = FOVGuiCircle
+
+MenuToggleBtn.Name = "MenuToggleBtn"
+MenuToggleBtn.Parent = AI_No1_Screen
+MenuToggleBtn.Position = UDim2.new(0.05, 0, 0.05, 0) 
+MenuToggleBtn.Size = UDim2.new(0, 100, 0, 40)
+MenuToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MenuToggleBtn.Text = "AI No1"
+MenuToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MenuToggleBtn.TextSize = 14
+MenuToggleBtn.Font = Enum.Font.SourceSansBold
+Instance.new("UICorner", MenuToggleBtn).CornerRadius = UDim.new(0, 8)
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = AI_No1_Screen
+MainFrame.Position = UDim2.new(0.35, 0, 0.3, 0)
+MainFrame.Size = UDim2.new(0, 250, 0, 270)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Visible = false
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Title.Text = "AI No1 - Blockspin Edition"
+Title.TextColor3 = Color3.fromRGB(255, 0, 50)
+Title.TextSize = 15
+Title.Font = Enum.Font.SourceSansBold
+
+local function StyleButton(button, text, posY)
+    button.Parent = MainFrame
+    button.Position = UDim2.new(0.1, 0, 0, posY)
+    button.Size = UDim2.new(0.8, 0, 0, 40)
+    button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    button.Text = text
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 15
+    button.Font = Enum.Font.SourceSans
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 6)
+end
+
+StyleButton(ToggleAimbot, "Aimbot: OFF", 55)
+StyleButton(ToggleESP, "Chams ESP: OFF", 105)
+StyleButton(ChangeFOV, "FOV Size: " .. FOVSize, 155)
+StyleButton(ChangeSmooth, "Pull Force: " .. string.format("%.2f", Smoothness), 205)
+
+local function UpdateFOVPosition()
+    local CalculatedRadius = FOVSize * 5 
+    FOVGuiCircle.Position = UDim2.new(TargetScreenX, 0, TargetScreenY, 0)
+    FOVGuiCircle.Size = UDim2.new(0, CalculatedRadius * 2, 0, CalculatedRadius * 2)
+end
+UpdateFOVPosition()
+
+MenuToggleBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+ToggleAimbot.MouseButton1Click:Connect(function()
+    AimbotEnabled = not AimbotEnabled
+    ToggleAimbot.Text = AimbotEnabled and "Aimbot: ON" or "Aimbot: OFF"
+    ToggleAimbot.TextColor3 = AimbotEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 255, 255)
+    FOVGuiCircle.Visible = AimbotEnabled
+end)
+
+local function ApplyESP(character)
+    if not character:FindFirstChild("ChamsHighlight") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "ChamsHighlight"
+        hl.FillColor = Color3.fromRGB(255, 0, 50) 
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255) 
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        hl.Adornee = character
+        hl.Parent = character
+    end
+end
+
+local function RemoveESP(character)
+    local hl = character:FindFirstChild("ChamsHighlight")
+    if hl then hl:Destroy() end
+end
+
+local function UpdateAllESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            if ESPEnabled then
+                ApplyESP(player.Character)
+            else
+                RemoveESP(player.Character)
+            end
+        end
+    end
+end
+
+ToggleESP.MouseButton1Click:Connect(function()
+    ESPEnabled = not ESPEnabled
+    ToggleESP.Text = ESPEnabled and "Chams ESP: ON" or "Chams ESP: OFF"
+    ToggleESP.TextColor3 = ESPEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 255, 255)
+    UpdateAllESP()
+end)
+
+local function SetupPlayerESP(player)
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.5) 
+        if ESPEnabled then
+            ApplyESP(char)
+        end
+    end)
+end
+
+for _, p in pairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then SetupPlayerESP(p) end
+end
+Players.PlayerAdded:Connect(SetupPlayerESP)
+
+ChangeFOV.MouseButton1Click:Connect(function()
+    FOVSize = (FOVSize == 8 and 10) or (FOVSize == 10 and 12) or (FOVSize == 12 and 15) or (FOVSize == 15 and 20) or (FOVSize == 20 and 30) or (FOVSize == 30 and 50) or (FOVSize == 50 and 1) or (FOVSize == 1 and 3) or (FOVSize == 3 and 5) or 8
+    ChangeFOV.Text = "FOV Size: " .. FOVSize
+    UpdateFOVPosition()
+end)
+
+ChangeSmooth.MouseButton1Click:Connect(function()
+    Smoothness = Smoothness >= 0.90 and 0.10 or (Smoothness + 0.10)
+    ChangeSmooth.Text = "Pull Force: " .. string.format("%.2f", Smoothness)
+end)
+
+-- คำนวณตำแหน่งฐาน (หัว) เพื่อใช้เป็นจุดอ้างอิงคลื่น Sine Wave
+local function GetBasePosition(character)
+    if character:FindFirstChild("Head") then 
+        return character.Head.Position 
+    elseif character:FindFirstChild("HumanoidRootPart") then
+        return character.HumanoidRootPart.Position + Vector3.new(0, 1.5, 0)
+    end
+    return nil
+end
+
+local function IsPlayerVisible(targetPlayer, targetPosition)
+    local origin = Camera.CFrame.Position
+    local direction = targetPosition - origin
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local ignoreList = {LocalPlayer.Character, targetPlayer.Character, Camera}
+    
+    if targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") then
+        if targetPlayer.Character.Humanoid.Sit and targetPlayer.Character.Humanoid.SeatPart then
+            local vehicle = targetPlayer.Character.Humanoid.SeatPart:FindFirstAncestorOfClass("Model")
+            if vehicle then table.insert(ignoreList, vehicle) end
+        end
+    end
+    
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        if LocalPlayer.Character.Humanoid.Sit and LocalPlayer.Character.Humanoid.SeatPart then
+            local ourVehicle = LocalPlayer.Character.Humanoid.SeatPart:FindFirstAncestorOfClass("Model")
+            if ourVehicle then table.insert(ignoreList, ourVehicle) end
+        end
+    end
+    
+    raycastParams.FilterDescendantsInstances = ignoreList
+    raycastParams.IgnoreWater = true
+    return workspace:Raycast(origin, direction, raycastParams) == nil
+end
+
+local function GetClosestPlayer()
+    local Target, ShortestDistance = nil, (FOVSize * 5)
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health > 0 then
+            local BasePos = GetBasePosition(v.Character)
+            if BasePos then
+                -- คำนวณหาคนที่อยู่ใกล้เป้าเล็งที่สุดโดยใช้ตำแหน่งฐานชั่วคราว
+                local ScreenPos, OnScreen = Camera:WorldToViewportPoint(BasePos)
+                if OnScreen and IsPlayerVisible(v, BasePos) then
+                    local CenterMouse = Vector2.new(Camera.ViewportSize.X * TargetScreenX, Camera.ViewportSize.Y * TargetScreenY)
+                    local Distance = (Vector2.new(ScreenPos.X, ScreenPos.Y) - CenterMouse).Magnitude
+                    if Distance < ShortestDistance then
+                        ShortestDistance = Distance
+                        Target = v
+                    end
+                end
+            end
+        end
+    end
+    return Target
+end
+
+RunService.RenderStepped:Connect(function(deltaTime)
+    if AimbotEnabled then
+        RunningTime = RunningTime + (deltaTime * JitterSpeed)
+        -- คำนวณค่าคลื่นให้อยู่ในช่วง -1 ถึง 1 แล้วปรับแต่งระยะด้วย JitterAmount
+        local VerticalOffset = math.sin(RunningTime) * JitterAmount
+
+        local TargetPlayer = GetClosestPlayer()
+        if TargetPlayer and TargetPlayer.Character then
+            local BasePos = GetBasePosition(TargetPlayer.Character)
+            if BasePos then
+                -- เลื่อนเป้าลงมาจากหัวเล็กน้อยเพื่อให้คลื่นเคลื่อนที่อยู่รอบๆ ช่วงคอ/หน้าอกด้านบน
+                local TargetPos = BasePos - Vector3.new(0, 0.6 + VerticalOffset, 0)
+                
+                local CurrentCFrame = Camera.CFrame
+                local TargetCFrame = CFrame.new(CurrentCFrame.Position, TargetPos)
+                Camera.CFrame = CurrentCFrame:Lerp(TargetCFrame, Smoothness)
+            end
+        end
+    end
+end)
